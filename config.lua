@@ -21,14 +21,14 @@ local config = {
     },
 
     -- Gallifreyan Stabilisation Field Generator
-    -- {
-    --   label = "Gallifreyan Stabilisation Field Generator",
-    --   id = 2860,
-    --   name = "tectech:gt.stabilisation_field_generator",
-    --   damage = 8,
-    --   minQty = 1,
-    --   craftAmount = 1,
-    -- },
+    {
+      label = "Gallifreyan Stabilisation Field Generator",
+      id = 2860,
+      name = "tectech:gt.stabilisation_field_generator",
+      damage = 8,
+      minQty = 2236,
+      craftAmount = 80,
+    },
   },
 
   components = {
