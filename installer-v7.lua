@@ -15,7 +15,7 @@
 ]]
 
 local DEFAULT_BASE_URL =
-  "https://raw.githubusercontent.com/OWNER/REPO/main"
+  "https://raw.githubusercontent.com/Fil0807/GTNH-2.8.4-Automated-Crafting/main"
 
 local VERSION = "v7"
 
