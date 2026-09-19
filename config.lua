@@ -17,7 +17,7 @@ local config = {
       name = "gregtech:gt.metaitem.01",
       damage = 17028,
       minQty = 100000,
-      craftAmount = 100000,
+      craftAmount = 10000,
     },
 
     -- Gallifreyan Stabilisation Field Generator
@@ -26,8 +26,8 @@ local config = {
     --   id = 2860,
     --   name = "tectech:gt.stabilisation_field_generator",
     --   damage = 8,
-    --   minQty = 22336,
-    --   craftAmount = 80,
+    --   minQty = 1,
+    --   craftAmount = 1,
     -- },
   },
 

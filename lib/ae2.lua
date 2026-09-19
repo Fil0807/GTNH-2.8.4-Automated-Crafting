@@ -11,7 +11,7 @@
 
 local component = require("component")
 local ae2 = {}
-ae2.VERSION = "v7"
+ae2.VERSION = "v8"
 
 local function invoke(proxy, method, ...)
   if not proxy or not proxy.address then
@@ -240,35 +240,6 @@ function ae2.isJobCanceled(job)
   end
 
   return false
-end
-
--- Defensive CPU check. It only uses getCpus(), never the whole item network.
-function ae2.isCpuCraftingTarget(meProxy, targets)
-  if not meProxy then return false, nil end
-
-  local ok, cpus = invoke(meProxy, "getCpus")
-  if not ok or type(cpus) ~= "table" then
-    return false, nil
-  end
-
-  for _, cpu in pairs(cpus) do
-    if type(cpu) == "table" and cpu.busy then
-      local entry =
-        cpu.craftingItem or
-        cpu.activeItem or
-        (cpu.storedItems and cpu.storedItems[1])
-
-      if entry then
-        for _, target in ipairs(targets) do
-          if ae2.matchItem(entry, target) then
-            return true, target.label
-          end
-        end
-      end
-    end
-  end
-
-  return false, nil
 end
 
 return ae2

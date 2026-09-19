@@ -6,6 +6,10 @@
 
   This version deliberately does NOT call getItemsInNetwork() without
   a filter. Large GTNH networks can make that call extremely expensive.
+
+  Crafting jobs are tracked independently per target. A second request
+  for the same target is blocked until its previous CraftingStatus is
+  done or canceled. Different targets are allowed to run concurrently.
 ]]
 
 package.path =
@@ -157,20 +161,34 @@ end
 printBanner()
 
 local state = {
-  activeJob = nil,
+  -- activeJobs[targetKey] = {
+  --   target = target,
+  --   status = CraftingStatus userdata,
+  --   startTime = computer.uptime(),
+  -- }
+  activeJobs = {},
   running = true,
   cycleCount = 0,
 }
 
-local function checkActiveJob(timeStr)
-  if not state.activeJob then return end
+local function targetKey(target)
+  return tostring(target.name) .. ":" .. tostring(target.damage)
+end
 
-  local target = state.activeJob.target
-  local elapsed = math.floor(
-    computer.uptime() - state.activeJob.startTime
-  )
+local function getActiveJob(target)
+  return state.activeJobs[targetKey(target)]
+end
 
-  if ae2.isJobDone(state.activeJob.status) then
+local function clearFinishedJob(target, timeStr)
+  local key = targetKey(target)
+  local job = state.activeJobs[key]
+  if not job then
+    return false
+  end
+
+  local elapsed = math.floor(computer.uptime() - job.startTime)
+
+  if ae2.isJobDone(job.status) then
     print(
       string.format(
         "[%s] [CRAFT COMPLETE] '%s' (%ds)",
@@ -179,11 +197,11 @@ local function checkActiveJob(timeStr)
         elapsed
       )
     )
-    state.activeJob = nil
-    return
+    state.activeJobs[key] = nil
+    return true
   end
 
-  if ae2.isJobCanceled(state.activeJob.status) then
+  if ae2.isJobCanceled(job.status) then
     print(
       string.format(
         "[%s] [CRAFT CANCELED] '%s'",
@@ -191,8 +209,8 @@ local function checkActiveJob(timeStr)
         target.label
       )
     )
-    state.activeJob = nil
-    return
+    state.activeJobs[key] = nil
+    return true
   end
 
   if config.settings.debug then
@@ -204,13 +222,21 @@ local function checkActiveJob(timeStr)
       )
     )
   end
+
+  return false
+end
+
+local function activeJobCount()
+  local count = 0
+  for _ in pairs(state.activeJobs) do
+    count = count + 1
+  end
+  return count
 end
 
 local function runCycle()
   state.cycleCount = state.cycleCount + 1
   local timeStr = os.date("%H:%M:%S")
-
-  checkActiveJob(timeStr)
 
   --------------------------------------------------------------
   -- 1. LSC Wireless EU gate
@@ -259,49 +285,19 @@ local function runCycle()
   end
 
   --------------------------------------------------------------
-  -- 2. Do not overlap our own craft
-  --------------------------------------------------------------
-  if config.settings.waitForActiveCraft and state.activeJob then
-    local elapsed = math.floor(
-      computer.uptime() - state.activeJob.startTime
-    )
-
-    print(
-      string.format(
-        "  [WAIT] '%s' still crafting (%ds)",
-        state.activeJob.target.label,
-        elapsed
-      )
-    )
-    return
-  end
-
-  --------------------------------------------------------------
-  -- 3. Check AE2 CPUs without reading the whole inventory
-  --------------------------------------------------------------
-  if config.settings.waitForActiveCraft and
-     config.settings.preventDuplicateCpuCraft then
-
-    local busy, label =
-      ae2.isCpuCraftingTarget(
-        meProxy,
-        config.craftTargets
-      )
-
-    if busy then
-      print(
-        "  [WAIT] AE2 CPU already crafting '" ..
-        tostring(label) .. "'"
-      )
-      return
-    end
-  end
-
-  --------------------------------------------------------------
-  -- 4. Targeted stock checks + crafting
+  -- 2. Targeted stock checks + per-target crafting
+  --
+  -- An active Titanium Plate job blocks only another Titanium Plate
+  -- request. Other configured targets remain independent.
   --------------------------------------------------------------
   local craftsStarted = 0
   local maxCrafts = config.settings.maxCraftsPerCycle or 1
+  if config.settings.waitForActiveCraft then
+    local count = activeJobCount()
+    if count > 0 and config.settings.debug then
+      print("  [DEBUG] Active target jobs: " .. tostring(count))
+    end
+  end
 
   for index, target in ipairs(config.craftTargets) do
 
@@ -324,6 +320,20 @@ local function runCycle()
         )
       )
 
+      local existingJob = getActiveJob(target)
+
+      if existingJob and config.settings.waitForActiveCraft then
+        local finished = clearFinishedJob(target, timeStr)
+
+        if not finished then
+          print(
+            "      [WAIT] '" ..
+            target.label ..
+            "' already has an active crafting job"
+          )
+        end
+      end
+
       if currentQty < target.minQty then
         print(
           string.format(
@@ -334,48 +344,55 @@ local function runCycle()
           )
         )
 
-        local craftable, stack, findErr =
-          ae2.findCraftable(
-            meProxy,
-            target
-          )
+        existingJob = getActiveJob(target)
 
-        if not craftable then
-          print("      [NOTICE] " .. tostring(findErr))
+        if existingJob and config.settings.waitForActiveCraft then
+          -- Same target is already being crafted; do not queue another batch.
+          -- We deliberately do not return here: another target may still run.
         else
-          local success, requestOrError =
-            ae2.requestCraft(
-              craftable,
-              target.craftAmount
+          local craftable, stack, findErr =
+            ae2.findCraftable(
+              meProxy,
+              target
             )
 
-          if success then
-            print(
-              string.format(
-                "      [CRAFT STARTED] '%s' x%s",
-                target.label,
-                lsc.formatNumber(target.craftAmount)
-              )
-            )
-
-            state.activeJob = {
-              target = target,
-              status = requestOrError,
-              startTime = computer.uptime(),
-            }
-
-            craftsStarted = craftsStarted + 1
-
-            if craftsStarted >= maxCrafts then
-              return
-            end
+          if not craftable then
+            print("      [NOTICE] " .. tostring(findErr))
           else
-            print(
-              "      [FAILED] '" ..
-              target.label ..
-              "': " ..
-              tostring(requestOrError)
-            )
+            local success, requestOrError =
+              ae2.requestCraft(
+                craftable,
+                target.craftAmount
+              )
+
+            if success then
+              print(
+                string.format(
+                  "      [CRAFT STARTED] '%s' x%s",
+                  target.label,
+                  lsc.formatNumber(target.craftAmount)
+                )
+              )
+
+              state.activeJobs[targetKey(target)] = {
+                target = target,
+                status = requestOrError,
+                startTime = computer.uptime(),
+              }
+
+              craftsStarted = craftsStarted + 1
+
+              if craftsStarted >= maxCrafts then
+                return
+              end
+            else
+              print(
+                "      [FAILED] '" ..
+                target.label ..
+                "': " ..
+                tostring(requestOrError)
+              )
+            end
           end
         end
       elseif config.settings.debug then

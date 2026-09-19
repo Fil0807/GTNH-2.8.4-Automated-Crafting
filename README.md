@@ -77,11 +77,21 @@ FOUND = true
 when the exact `name + damage` craftable is present.
 
 
-## v7 change
+## v8 change
 
-Craftable lookup now mirrors the verified diagnostic test exactly: `getCraftables({name = target.name})`, then `Craftable:getItemStack()` and exact `name + damage` comparison. The combined name+damage AE2 filter is deliberately not used because it misses the verified Titanium Plate pattern in this GTNH/OC environment.
+Craftable lookup continues to mirror the verified diagnostic test exactly: `getCraftables({name = target.name})`, then `Craftable:getItemStack()` and exact `name + damage` comparison. The combined name+damage AE2 filter is deliberately not used because it misses the verified Titanium Plate pattern in this GTNH/OC environment.
 
+## v8 change
 
-## v7
+Crafting jobs are now tracked independently per target using the `CraftingStatus` returned by `Craftable:request()`.
+
+Example:
+- Titanium Plate x10,000 is active -> another Titanium Plate request is blocked.
+- Stabilisation Field Generator is below its threshold at the same time -> it can still start, subject to `maxCraftsPerCycle` and available AE2 resources/CPUs.
+- When the Titanium Plate job is `isDone()` or `isCanceled()`, the next cycle may request another Titanium Plate batch.
+
+The old global "any active craft blocks everything" behavior has been removed.
+
+## v8
 
 The archive is flat: `main.lua`, `config.lua`, `lib/`, and `tests/` are directly at the archive root. The AE2 module exposes `ae2.VERSION = "v7"`; main.lua prints it at startup so a stale `/home/lib/ae2.lua` is immediately detectable.
